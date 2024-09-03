@@ -4,3 +4,4 @@ float32 y
 float32 theta
 ---
 # Response
+int32 status_code

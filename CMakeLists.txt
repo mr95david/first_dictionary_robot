@@ -16,6 +16,10 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/MoveToPose.srv"
   "srv/RelativeMove.srv"
+  "srv/GetStatus.srv"
+  "srv/SetStatus.srv"
+  "srv/ValidateGoal.srv"
+  "msg/StateActionC.msg"
  # DEPENDENCIES geometry_msgs
 )
 
@@ -23,8 +27,22 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 install(PROGRAMS
   ${PROJECT_NAME}/move_pose.py
   ${PROJECT_NAME}/relative_pose.py
+  ${PROJECT_NAME}/robot_state.py
+  ${PROJECT_NAME}/stop_all.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
+# Instalacion de carpetas extra, entre estas es la carpetas completmentarias de configuracion
+# launch y parametros
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# # Generador de interfaces
+# rosidl_generate_interfaces(${PROJECT_NAME}
+  
+# )
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
