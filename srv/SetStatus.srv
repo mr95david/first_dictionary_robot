@@ -1,0 +1,8 @@
+# Request
+bool change
+#string status
+uint8[16] uuid
+---
+# Response
+bool success
+string message

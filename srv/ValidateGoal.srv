@@ -1,0 +1,6 @@
+# Request
+bool change
+---
+# Response
+string status
+uint8[16] uuid

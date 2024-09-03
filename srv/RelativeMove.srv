@@ -3,3 +3,4 @@ float32 linear
 float32 angular
 ---
 # Response
+int32 status_code

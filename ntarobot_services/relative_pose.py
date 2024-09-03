@@ -6,17 +6,34 @@ from rclpy.action import ActionClient
 
 # Importe de librerias de interfaces
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
+from unique_identifier_msgs.msg import UUID
 from ntarobot_services.srv import RelativeMove
+from std_srvs.srv import SetBool
+from ntarobot_services.srv import SetStatus
 from nav2_msgs.action import NavigateToPose
 
 # Librerias utilitarias
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
 import math
+from time import sleep
 
 # Clase de nodo de ejecucion
 class RelativeMovePose(Node):
     def __init__(self):
         super().__init__("service_relative_move")
+
+        self.client_ = self.create_client(
+            SetStatus,
+            '/change_status'
+        )
+
+        # Asignacion de cliente
+        while not self.client_.wait_for_service(timeout_sec = 1.0):
+            # Validacion de conexion
+            self.get_logger().info('Service not available, waiting...')
+
+        # asignar request
+        self.request_ = SetStatus.Request()
 
         # Inicializacion de variables
         self.actual_pose = PoseWithCovarianceStamped()
@@ -44,6 +61,14 @@ class RelativeMovePose(Node):
             NavigateToPose,
             "/navigate_to_pose",
         )
+
+        # Temporal: Servicio para cancelar movimiento solicitado
+        self.srv_cancel_ = self.create_service(
+            SetBool,
+            "relative_move/cancel_goal",
+            self.cancel_navigation_callback
+        )
+        # # BORRAR HASTA ACA
 
         # Validacion de definicion de servicio de move pose
         self.get_logger().info("Relative Move service in action")
@@ -144,6 +169,12 @@ class RelativeMovePose(Node):
             return
         self.get_logger().info('El goal fue aceptado')
 
+        self.request_.change = True
+        self.request_.uuid = goal_handle.goal_id.uuid
+        fut_statusService = self.client_.call_async(self.request_)
+        sleep(0.01)
+        fut_statusService.add_done_callback(self.servie_response_callback)
+
         # Recibimiento de informacion de la ccion
         self.get_result_future = goal_handle.get_result_async()
         self.get_result_future.add_done_callback(self.get_result_callback)
@@ -152,14 +183,77 @@ class RelativeMovePose(Node):
     def get_result_callback(self, future):
         result = future.result()
         if result is None:
+
             self.get_logger().error('Error al obtener el resultado de la acción.')
             return
 
         # Verifica el estado final de la acción
         if result.status == 4:  # El número 4 representa el estado "SUCCEEDED"
+            self.request_.change = False
+            self.request_.uuid = UUID().uuid
+            fut_statusService = self.client_.call_async(self.request_)
+            sleep(0.01)
+            fut_statusService.add_done_callback(self.servie_response_callback)
             self.get_logger().info('El robot alcanzó la pose deseada con éxito.')
         else:
+            self.request_.change = False
+            self.request_.uuid = UUID().uuid
+            fut_statusService = self.client_.call_async(self.request_)
+            sleep(0.01)
+            fut_statusService.add_done_callback(self.servie_response_callback)
             self.get_logger().warn(f'El robot no alcanzó la pose deseada. Estado: {result.status}')
+
+    # Validacion de servicio interno
+    # Creacion de funcion de respuesta de servicio
+    def servie_response_callback(self, fut):
+        # Validacion de estado de ejecucion
+        try:
+            response = fut.result()
+            if response.success:
+                self.get_logger().info('Servicio llamado con exito')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+    # Nueva función de callback para el servicio de cancelación
+    def cancel_navigation_callback(self, request, response):
+        # Manejador de cancelación del objetivo
+        if hasattr(self, 'send_goal_future'):
+            goal_handle = self.send_goal_future.result()
+            if goal_handle is not None:
+                self.get_logger().info('Cancelando el objetivo...')
+                cancel_future = goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(self.cancel_response_callback)
+                response.success = True
+                response.message = "Objetivo cancelado."
+            else:
+                self.get_logger().warn('No hay un objetivo activo para cancelar.')
+                response.success = False
+                response.message = "No hay un objetivo activo."
+        else:
+            self.get_logger().warn('No hay un objetivo para cancelar.')
+            response.success = False
+            response.message = "No hay un objetivo activo."
+        
+        return response
+
+    # Nueva función de callback para la respuesta de cancelación
+    def cancel_response_callback(self, future):
+        cancel_response = future.result()
+        self.get_logger().info(str(cancel_response.return_code))
+        # Validacion de estado de cancelacion final
+        if cancel_response.return_code is not None:
+            # Validacion de tipo de ejecucion
+            if cancel_response.return_code == 0:
+                self.get_logger().info('El objetivo fue cancelado con éxito.')
+            # Validacion en caso de no encontrar el identificador especifico
+            elif cancel_response.return_code == 1:
+                self.get_logger().warn('No existen objetivos por cancelar.')
+            elif cancel_response.return_code == 2:
+                self.get_logger().warn('El ID del objetivo no fue encontrado')
+            # Error general
+            elif cancel_response.return_code == 3:
+                self.get_logger().error('El servicio de cancelacion no pudo ser ejecutado.')
+
 
 def main():
     rclpy.init()
